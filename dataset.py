@@ -1,54 +1,35 @@
 import os
-
 import cv2
 import numpy as np
 import torch
 import torch.utils.data
+from glob import glob
+from PIL import Image
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, img_ids, img_dir, mask_dir, img_ext, mask_ext, num_classes, transform=None):
-        """
-        Args:
-            img_ids (list): Image ids.
-            img_dir: Image file directory.
-            mask_dir: Mask file directory.
-            img_ext (str): Image file extension.
-            mask_ext (str): Mask file extension.
-            num_classes (int): Number of classes.
-            transform (Compose, optional): Compose transforms of albumentations. Defaults to None.
-        
-        """
-        self.img_ids = img_ids
-        self.img_dir = img_dir
-        self.mask_dir = mask_dir
-        self.img_ext = img_ext
-        self.mask_ext = mask_ext
-        self.num_classes = num_classes
+    def __init__(self, data_dir, transform=None):
+        self.data_dir = data_dir 
+        self.p_ids = [os.path.basename(p).split('.')[0] for p in glob(os.path.join(data_dir, '*.jpg'))]
         self.transform = transform
 
     def __len__(self):
-        return len(self.img_ids)
+        return len(self.p_ids)
 
     def __getitem__(self, idx):
-        img_id = self.img_ids[idx]
+        p_id = self.p_ids[idx]
         
-        img = cv2.imread(os.path.join(self.img_dir, img_id + self.img_ext))
+        img = cv2.imread(os.path.join(self.data_dir, f"{p_id}.jpg"))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32)
 
-        mask = []
-        for i in range(self.num_classes):
-            mask.append(cv2.imread(os.path.join(self.mask_dir, str(i),
-                        img_id + self.mask_ext), cv2.IMREAD_GRAYSCALE)[..., None])
-        mask = np.dstack(mask)
+        mask = np.asarray(Image.open(os.path.join(self.data_dir, f"{p_id}.png")))
 
         if self.transform is not None:
             augmented = self.transform(image=img, mask=mask)
             img = augmented['image']
             mask = augmented['mask']
         
-        img = img.astype('float32') / 255
         img = img.transpose(2, 0, 1)
-        mask = mask.astype('float32') / 255
-        mask = mask.transpose(2, 0, 1)
-        
-        return img, mask, {'img_id': img_id}
+        mask = np.expand_dims(mask, 0).astype(np.float32)
+
+        return img, mask

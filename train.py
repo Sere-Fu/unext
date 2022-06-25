@@ -11,16 +11,14 @@ import torch.optim as optim
 import yaml
 from albumentations.augmentations import transforms
 from albumentations.core.composition import Compose, OneOf
-from sklearn.model_selection import train_test_split
 from torch.optim import lr_scheduler
 from tqdm import tqdm
-from albumentations import RandomRotate90,Resize
+from albumentations import Resize
 import archs
 import losses
 from dataset import Dataset
 from metrics import iou_score
 from utils import AverageMeter, str2bool
-from archs import UNext
 
 
 ARCH_NAMES = archs.__all__
@@ -59,12 +57,8 @@ def parse_args():
                         ' (default: BCEDiceLoss)')
     
     # dataset
-    parser.add_argument('--dataset', default='isic',
+    parser.add_argument('--dataset', default='pws',
                         help='dataset name')
-    parser.add_argument('--img_ext', default='.png',
-                        help='image file extension')
-    parser.add_argument('--mask_ext', default='.png',
-                        help='mask file extension')
 
     # optimizer
     parser.add_argument('--optimizer', default='Adam',
@@ -110,7 +104,7 @@ def train(config, train_loader, model, criterion, optimizer):
     model.train()
 
     pbar = tqdm(total=len(train_loader))
-    for input, target, _ in train_loader:
+    for input, target in train_loader:
         input = input.cuda()
         target = target.cuda()
 
@@ -163,7 +157,7 @@ def validate(config, val_loader, model, criterion):
 
     with torch.no_grad():
         pbar = tqdm(total=len(val_loader))
-        for input, target, _ in val_loader:
+        for input, target in val_loader:
             input = input.cuda()
             target = target.cuda()
 
@@ -234,6 +228,8 @@ def main():
                                            config['input_channels'],
                                            config['deep_supervision'])
 
+    model.load_state_dict(torch.load('models/pws_mmseg/base.pth'))
+    print("_________pth loaded__________")
     model = model.cuda()
 
     params = filter(lambda p: p.requires_grad, model.parameters())
@@ -259,39 +255,27 @@ def main():
     else:
         raise NotImplementedError
 
-    # Data loading code
-    img_ids = glob(os.path.join('inputs', config['dataset'], 'images', '*' + config['img_ext']))
-    img_ids = [os.path.splitext(os.path.basename(p))[0] for p in img_ids]
-
-    train_img_ids, val_img_ids = train_test_split(img_ids, test_size=0.2, random_state=41)
 
     train_transform = Compose([
-        RandomRotate90(),
-        transforms.Flip(),
+        # RandomRotate90(),
+        transforms.HorizontalFlip(),
         Resize(config['input_h'], config['input_w']),
-        transforms.Normalize(),
+        transforms.Normalize(mean=(0.284, 0.349, 0.417), std=(0.32, 0.191, 0.222)),
     ])
 
     val_transform = Compose([
         Resize(config['input_h'], config['input_w']),
-        transforms.Normalize(),
+        transforms.Normalize(mean=(0.284, 0.349, 0.417), std=(0.32, 0.191, 0.222)),
     ])
 
     train_dataset = Dataset(
-        img_ids=train_img_ids,
-        img_dir=os.path.join('inputs', config['dataset'], 'images'),
-        mask_dir=os.path.join('inputs', config['dataset'], 'masks'),
-        img_ext=config['img_ext'],
-        mask_ext=config['mask_ext'],
-        num_classes=config['num_classes'],
+        data_dir=os.path.join('inputs', config['dataset'], 'train'),
         transform=train_transform)
     val_dataset = Dataset(
-        img_ids=val_img_ids,
-        img_dir=os.path.join('inputs', config['dataset'], 'images'),
-        mask_dir=os.path.join('inputs', config['dataset'], 'masks'),
-        img_ext=config['img_ext'],
-        mask_ext=config['mask_ext'],
-        num_classes=config['num_classes'],
+        data_dir=os.path.join('inputs', config['dataset'], 'val'),
+        transform=val_transform)
+    test_dataset = Dataset(
+        data_dir=os.path.join('inputs', config['dataset'], 'test'),
         transform=val_transform)
 
     train_loader = torch.utils.data.DataLoader(
@@ -303,6 +287,14 @@ def main():
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config['batch_size'],
+        # batch_size=1,
+        shuffle=False,
+        num_workers=config['num_workers'],
+        drop_last=False)
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=config['batch_size'],
+        # batch_size=1,
         shuffle=False,
         num_workers=config['num_workers'],
         drop_last=False)
@@ -326,14 +318,18 @@ def main():
         train_log = train(config, train_loader, model, criterion, optimizer)
         # evaluate on validation set
         val_log = validate(config, val_loader, model, criterion)
+        test_log = validate(config, test_loader, model, criterion)
 
         if config['scheduler'] == 'CosineAnnealingLR':
             scheduler.step()
         elif config['scheduler'] == 'ReduceLROnPlateau':
             scheduler.step(val_log['loss'])
 
-        print('loss %.4f - iou %.4f - val_loss %.4f - val_iou %.4f'
-              % (train_log['loss'], train_log['iou'], val_log['loss'], val_log['iou']))
+        # print('loss %.4f - iou %.4f - val_loss %.4f - val_iou %.4f'
+        #       % (train_log['loss'], train_log['iou'], val_log['loss'], val_log['iou']))
+
+        print('loss %.4f - iou %.4f - val_loss %.4f - val_iou %.4f - test_loss %.4f - test_iou %.4f'
+              % (train_log['loss'], train_log['iou'], val_log['loss'], val_log['iou'], test_log['loss'], test_log['iou']))
 
         log['epoch'].append(epoch)
         log['lr'].append(config['lr'])
