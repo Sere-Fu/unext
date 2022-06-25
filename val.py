@@ -56,6 +56,10 @@ def main():
     img_ids = [os.path.splitext(os.path.basename(p))[0] for p in img_ids]
 
     _, val_img_ids = train_test_split(img_ids, test_size=0.2, random_state=41)
+    # val_img_ids = sorted(val_img_ids)
+    # to_select = [0,1,3,4,5,6,7,9,10,11,12,13,14,17,18,19,21,23,24,26,27,28,29,30,31,32,33,34,35,38,39,40,41,43,45,49,50,51,52,56,57,59,60,63]
+    # tmp_ids = [val_img_ids[i] for i in range(len(val_img_ids)) if i in to_select]
+    # val_img_ids = tmp_ids
 
     model.load_state_dict(torch.load('models/%s/model.pth' %
                                      config['name']))
@@ -83,6 +87,8 @@ def main():
 
     iou_avg_meter = AverageMeter()
     dice_avg_meter = AverageMeter()
+    recall_avg_meter = AverageMeter()
+    precision_avg_meter = AverageMeter()
     gput = AverageMeter()
     cput = AverageMeter()
 
@@ -98,9 +104,11 @@ def main():
             output = model(input)
 
 
-            iou,dice = iou_score(output, target)
+            iou,dice, recall, precision = iou_score(output, target)
             iou_avg_meter.update(iou, input.size(0))
             dice_avg_meter.update(dice, input.size(0))
+            recall_avg_meter.update(recall, input.size(0))
+            precision_avg_meter.update(precision, input.size(0))
 
             output = torch.sigmoid(output).cpu().numpy()
             output[output>=0.5]=1
@@ -113,6 +121,8 @@ def main():
 
     print('IoU: %.4f' % iou_avg_meter.avg)
     print('Dice: %.4f' % dice_avg_meter.avg)
+    print('Recall: %.4f' % recall_avg_meter.avg)
+    print('Precision: %.4f' % precision_avg_meter.avg)
 
     torch.cuda.empty_cache()
 

@@ -94,7 +94,7 @@ def parse_args():
                         metavar='N', help='early stopping (default: -1)')
     parser.add_argument('--cfg', type=str, metavar="FILE", help='path to config file', )
 
-    parser.add_argument('--num_workers', default=4, type=int)
+    parser.add_argument('--num_workers', default=1, type=int)
 
     config = parser.parse_args()
 
@@ -103,7 +103,9 @@ def parse_args():
 # args = parser.parse_args()
 def train(config, train_loader, model, criterion, optimizer):
     avg_meters = {'loss': AverageMeter(),
-                  'iou': AverageMeter()}
+                  'iou': AverageMeter(),
+                  "recall": AverageMeter(),
+                  "precision": AverageMeter()}
 
     model.train()
 
@@ -123,7 +125,7 @@ def train(config, train_loader, model, criterion, optimizer):
         else:
             output = model(input)
             loss = criterion(output, target)
-            iou,dice = iou_score(output, target)
+            iou,dice, recall, precision = iou_score(output, target)
 
         # compute gradient and do optimizing step
         optimizer.zero_grad()
@@ -132,10 +134,14 @@ def train(config, train_loader, model, criterion, optimizer):
 
         avg_meters['loss'].update(loss.item(), input.size(0))
         avg_meters['iou'].update(iou, input.size(0))
+        avg_meters['recall'].update(recall, input.size(0))
+        avg_meters['precision'].update(precision, input.size(0))
 
         postfix = OrderedDict([
             ('loss', avg_meters['loss'].avg),
             ('iou', avg_meters['iou'].avg),
+            ('recall', avg_meters['recall'].avg),
+            ('precision', avg_meters['precision'].avg),
         ])
         pbar.set_postfix(postfix)
         pbar.update(1)
@@ -148,7 +154,9 @@ def train(config, train_loader, model, criterion, optimizer):
 def validate(config, val_loader, model, criterion):
     avg_meters = {'loss': AverageMeter(),
                   'iou': AverageMeter(),
-                   'dice': AverageMeter()}
+                   'dice': AverageMeter(),
+                   'recall': AverageMeter(),
+                   'precision': AverageMeter()}
 
     # switch to evaluate mode
     model.eval()
@@ -170,16 +178,20 @@ def validate(config, val_loader, model, criterion):
             else:
                 output = model(input)
                 loss = criterion(output, target)
-                iou,dice = iou_score(output, target)
+                iou,dice, recall, precision = iou_score(output, target)
 
             avg_meters['loss'].update(loss.item(), input.size(0))
             avg_meters['iou'].update(iou, input.size(0))
             avg_meters['dice'].update(dice, input.size(0))
+            avg_meters['recall'].update(recall, input.size(0))
+            avg_meters['precision'].update(precision, input.size(0))
 
             postfix = OrderedDict([
                 ('loss', avg_meters['loss'].avg),
                 ('iou', avg_meters['iou'].avg),
-                ('dice', avg_meters['dice'].avg)
+                ('dice', avg_meters['dice'].avg),
+                ('recall', avg_meters['recall'].avg),
+                ('precision', avg_meters['precision'].avg)
             ])
             pbar.set_postfix(postfix)
             pbar.update(1)

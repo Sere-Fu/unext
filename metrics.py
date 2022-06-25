@@ -16,7 +16,9 @@ def iou_score(output, target):
     union = (output_ | target_).sum()
     iou = (intersection + smooth) / (union + smooth)
     dice = (2* iou) / (iou+1)
-    return iou, dice
+    recall = (intersection + smooth) / (target_.sum() + smooth)
+    precision = (intersection + smooth) / (output_.sum() + smooth)
+    return iou, dice, recall, precision
 
 
 def dice_coef(output, target):
